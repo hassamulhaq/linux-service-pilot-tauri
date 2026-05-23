@@ -12,7 +12,21 @@ fn keyring_entry() -> Result<keyring::Entry, String> {
 }
 
 fn stored_sudo_password() -> Option<String> {
-    keyring_entry().ok()?.get_password().ok()
+    let entry = match keyring_entry() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("[keyring] open entry failed: {}", e);
+            return None;
+        }
+    };
+    match entry.get_password() {
+        Ok(p) => Some(p),
+        Err(keyring::Error::NoEntry) => None,
+        Err(e) => {
+            eprintln!("[keyring] read failed: {}", e);
+            None
+        }
+    }
 }
 
 #[tauri::command]
@@ -64,43 +78,70 @@ fn sudo_verify(password: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn run_privileged(args: &[String]) -> Result<String, String> {
-    if let Some(pw) = stored_sudo_password() {
-        let mut cmd_args: Vec<String> = vec![
-            "-S".into(), "-k".into(), "-p".into(), "".into(), "--".into(),
-        ];
-        cmd_args.extend(args.iter().cloned());
-        let mut child = Command::new("sudo")
-            .args(&cmd_args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(pw.as_bytes());
-            let _ = stdin.write_all(b"\n");
-        }
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            return Err(if err.is_empty() {
-                format!("Command failed with status {}", out.status)
-            } else {
-                err
-            });
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).to_string())
-    } else {
-        let out = Command::new("pkexec")
-            .args(args)
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+fn run_with_sudo(password: &str, args: &[String]) -> Result<String, String> {
+    let mut cmd_args: Vec<String> = vec![
+        "-S".into(), "-k".into(), "-p".into(), "".into(), "--".into(),
+    ];
+    cmd_args.extend(args.iter().cloned());
+    let mut child = Command::new("sudo")
+        .args(&cmd_args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(password.as_bytes());
+        let _ = stdin.write_all(b"\n");
     }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if err.is_empty() {
+            format!("sudo failed with status {}", out.status)
+        } else {
+            err
+        });
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+fn run_with_pkexec(args: &[String]) -> Result<String, String> {
+    let out = Command::new("pkexec")
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+fn run_privileged(args: &[String]) -> Result<String, String> {
+    match stored_sudo_password() {
+        Some(pw) => run_with_sudo(&pw, args),
+        None => run_with_pkexec(args),
+    }
+}
+
+#[tauri::command]
+fn diagnose_auth() -> String {
+    let mut report = String::new();
+    match keyring_entry() {
+        Ok(e) => match e.get_password() {
+            Ok(_) => report.push_str("keyring: OK (password present)\n"),
+            Err(keyring::Error::NoEntry) => report.push_str("keyring: empty (no entry)\n"),
+            Err(err) => report.push_str(&format!("keyring: read error: {}\n", err)),
+        },
+        Err(err) => report.push_str(&format!("keyring: open error: {}\n", err)),
+    }
+    if let Some(pw) = stored_sudo_password() {
+        match run_with_sudo(&pw, &["systemctl".into(), "is-system-running".into()]) {
+            Ok(out) => report.push_str(&format!("sudo test: OK -> {}", out.trim())),
+            Err(e) => report.push_str(&format!("sudo test: FAILED -> {}", e)),
+        }
+    }
+    report
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -465,6 +506,7 @@ pub fn run() {
             set_sudo_password,
             clear_sudo_password,
             has_sudo_password,
+            diagnose_auth,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

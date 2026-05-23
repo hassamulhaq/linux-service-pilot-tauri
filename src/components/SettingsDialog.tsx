@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, KeyRound, Loader2, ShieldCheck, ShieldAlert, Trash2 } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Loader2, ShieldCheck, ShieldAlert, Stethoscope, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,8 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
   const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [diag, setDiag] = useState<string>("");
+  const [diagBusy, setDiagBusy] = useState(false);
 
   async function refresh() {
     try {
@@ -67,6 +69,17 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
       toast.error(`${e}`);
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function diagnose() {
+    setDiagBusy(true);
+    try {
+      setDiag(await api.diagnoseAuth());
+    } catch (e) {
+      setDiag(String(e));
+    } finally {
+      setDiagBusy(false);
     }
   }
 
@@ -151,6 +164,25 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
               </div>
             </form>
           )}
+
+          <Separator />
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold uppercase tracking-wider text-[10px]">
+                Diagnostics
+              </div>
+              <Button size="xs" variant="outline" onClick={diagnose} disabled={diagBusy}>
+                {diagBusy ? <Loader2 className="animate-spin" /> : <Stethoscope />}
+                Run check
+              </Button>
+            </div>
+            {diag && (
+              <pre className="text-[11px] font-mono whitespace-pre-wrap bg-muted/40 rounded border p-2 leading-relaxed">
+                {diag}
+              </pre>
+            )}
+          </div>
 
           <Separator />
 

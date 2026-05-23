@@ -96,7 +96,7 @@ pnpm tauri build --bundles appimage  # only AppImage
 |---|---|
 | ![Dashboard](docs/screenshots/sc_00.webp) | ![Scan dialog](docs/screenshots/sc_01.webp) |
 | ![Logs viewer](docs/screenshots/sc_02.webp) | ![Settings — sudo keyring](docs/screenshots/sc_03.webp) |
-| ![Add service](docs/screenshots/sc_04.webp) | |
+| ![Add service](docs/screenshots/sc_04.webp) | ![Settings — sudo block](docs/screenshots/sc_05.webp) |
 
 ## Stack
 

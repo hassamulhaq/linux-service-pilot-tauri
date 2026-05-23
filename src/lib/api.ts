@@ -49,6 +49,7 @@ export const api = {
     invoke<void>("set_sudo_password", { password }),
   clearSudoPassword: () => invoke<void>("clear_sudo_password"),
   hasSudoPassword: () => invoke<boolean>("has_sudo_password"),
+  diagnoseAuth: () => invoke<string>("diagnose_auth"),
   listStatus: () => invoke<ServiceStatus[]>("list_status"),
   serviceStatus: (unit: string) => invoke<ServiceStatus>("service_status", { unit }),
   serviceAction: (action: Action, unit: string) =>

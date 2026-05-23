@@ -107,7 +107,17 @@ export function ServiceTable({
             </span>
             <span className="flex items-center gap-1.5 text-xs">
               <span className={`size-1.5 rounded-full ${dotColor} ${isActive ? "animate-pulse" : ""}`} />
-              <span className={isFailed ? "text-red-500" : ""}>
+              <span
+                className={
+                  isActive
+                    ? "text-emerald-500 font-medium"
+                    : isFailed
+                    ? "text-red-500 font-medium"
+                    : isMasked
+                    ? "text-amber-500"
+                    : ""
+                }
+              >
                 {status ? statusLabel(status) : "…"}
               </span>
             </span>
