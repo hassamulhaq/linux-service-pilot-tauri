@@ -43,7 +43,7 @@ export function LogsDialog({ unit, open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="!max-w-[80vw] w-[80vw] sm:max-w-[80vw]">
         <DialogHeader>
           <DialogTitle>Logs: {unit}</DialogTitle>
           <DialogDescription>
