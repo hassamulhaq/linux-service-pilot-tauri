@@ -10,6 +10,12 @@ A fast, native desktop dashboard for managing systemd services on Ubuntu/Linux. 
   Your browser does not support the video tag. <a href="docs/app-demo.mp4">Download the demo</a>.
 </video>
 
+
+
+https://github.com/user-attachments/assets/8245cdda-02d6-44b3-896a-239d64596dc8
+
+
+
 ## Quick Start
 
 ### 1. Install prerequisites (Ubuntu / Debian)
