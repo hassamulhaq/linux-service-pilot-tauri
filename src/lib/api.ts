@@ -5,6 +5,18 @@ export type ServiceEntry = {
   unit: string;
   group?: string | null;
   is_system?: boolean;
+  working_dir?: string | null;
+  command?: string | null;
+  run_user?: string | null;
+  is_custom?: boolean;
+};
+
+export type CreateCommandServicesArgs = {
+  prefix: string;
+  workingDir: string;
+  runUser?: string | null;
+  group?: string | null;
+  commands: string[];
 };
 
 export type AppConfig = {
@@ -43,6 +55,14 @@ export const api = {
   addService: (entry: ServiceEntry) => invoke<AppConfig>("add_service", { entry }),
   addServicesBulk: (entries: ServiceEntry[]) =>
     invoke<AppConfig>("add_services_bulk", { entries }),
+  createCommandServices: (args: CreateCommandServicesArgs) =>
+    invoke<AppConfig>("create_command_services", {
+      prefix: args.prefix,
+      workingDir: args.workingDir,
+      runUser: args.runUser ?? null,
+      group: args.group ?? null,
+      commands: args.commands,
+    }),
   removeService: (unit: string) => invoke<AppConfig>("remove_service", { unit }),
   scanServices: () => invoke<DiscoveredService[]>("scan_services"),
   setSudoPassword: (password: string) =>

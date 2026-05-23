@@ -152,6 +152,14 @@ pub struct ServiceEntry {
     pub group: Option<String>,
     #[serde(default)]
     pub is_system: bool,
+    #[serde(default)]
+    pub working_dir: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub run_user: Option<String>,
+    #[serde(default)]
+    pub is_custom: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -283,12 +291,204 @@ fn add_service(entry: ServiceEntry) -> Result<AppConfig, String> {
 #[tauri::command]
 fn remove_service(unit: String) -> Result<AppConfig, String> {
     let mut cfg = load_or_init();
-    if let Some(entry) = cfg.services.iter().find(|s| s.unit == unit) {
-        if entry.is_system {
-            return Err("System services cannot be removed".into());
+    let custom = cfg
+        .services
+        .iter()
+        .find(|s| s.unit == unit)
+        .map(|s| {
+            if s.is_system {
+                Err("System services cannot be removed".to_string())
+            } else {
+                Ok(s.is_custom)
+            }
+        })
+        .transpose()?
+        .unwrap_or(false);
+
+    if custom {
+        let full = format!("{}.service", unit);
+        let _ = run_privileged(&["systemctl".into(), "stop".into(), full.clone()]);
+        let _ = run_privileged(&["systemctl".into(), "disable".into(), full.clone()]);
+        let dest = format!("/etc/systemd/system/{}", full);
+        run_privileged(&["rm".into(), "-f".into(), dest])?;
+        let _ = run_privileged(&["systemctl".into(), "daemon-reload".into()]);
+    }
+
+    cfg.services.retain(|s| s.unit != unit);
+    save(&cfg)?;
+    Ok(cfg)
+}
+
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    let mut prev_dash = false;
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash && !out.is_empty() {
+            out.push('-');
+            prev_dash = true;
         }
     }
-    cfg.services.retain(|s| s.unit != unit);
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+fn shell_escape(s: &str) -> String {
+    let mut out = String::from("'");
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+fn build_unit_content(
+    description: &str,
+    working_dir: &str,
+    command: &str,
+    run_user: &str,
+    group: Option<&str>,
+) -> String {
+    let mut s = String::new();
+    s.push_str("[Unit]\n");
+    s.push_str(&format!("Description={}\n", description));
+    s.push_str("After=network.target\n\n");
+    s.push_str("[Service]\n");
+    s.push_str("Type=simple\n");
+    s.push_str(&format!("User={}\n", run_user));
+    if let Some(g) = group.filter(|g| !g.is_empty()) {
+        s.push_str(&format!("# Group={}\n", g));
+    }
+    s.push_str(&format!("WorkingDirectory={}\n", working_dir));
+    s.push_str(&format!("ExecStart=/bin/sh -c {}\n", shell_escape(command)));
+    s.push_str("Restart=on-failure\n");
+    s.push_str("RestartSec=5\n\n");
+    s.push_str("[Install]\n");
+    s.push_str("WantedBy=multi-user.target\n");
+    s
+}
+
+#[tauri::command]
+fn create_command_services(
+    prefix: String,
+    working_dir: String,
+    run_user: Option<String>,
+    group: Option<String>,
+    commands: Vec<String>,
+) -> Result<AppConfig, String> {
+    let prefix_slug = slugify(&prefix);
+    if prefix_slug.is_empty() {
+        return Err("Display name required".into());
+    }
+    let working_dir = working_dir.trim().to_string();
+    if working_dir.is_empty() {
+        return Err("Folder path required".into());
+    }
+    if !std::path::Path::new(&working_dir).is_absolute() {
+        return Err("Folder path must be absolute".into());
+    }
+    if !std::path::Path::new(&working_dir).is_dir() {
+        return Err(format!("Folder does not exist: {}", working_dir));
+    }
+    let user = run_user
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty())
+        .or_else(|| std::env::var("USER").ok())
+        .ok_or_else(|| "Could not resolve run-as user".to_string())?;
+
+    let cmds: Vec<String> = commands
+        .into_iter()
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty() && !c.starts_with('#'))
+        .collect();
+    if cmds.is_empty() {
+        return Err("At least one command required".into());
+    }
+
+    let mut cfg = load_or_init();
+    let mut planned: Vec<(String, String, String)> = Vec::new(); // (unit_name, dest_path, content)
+    let mut seen: std::collections::HashSet<String> = cfg.services.iter().map(|s| s.unit.clone()).collect();
+
+    for (i, cmd) in cmds.iter().enumerate() {
+        let cmd_slug = slugify(cmd);
+        let truncated: String = cmd_slug.split('-').take(4).collect::<Vec<_>>().join("-");
+        let mut base = if truncated.is_empty() {
+            format!("{}-{}", prefix_slug, i + 1)
+        } else {
+            format!("{}-{}", prefix_slug, truncated)
+        };
+        let mut n = 2u32;
+        let original = base.clone();
+        while seen.contains(&base) {
+            base = format!("{}-{}", original, n);
+            n += 1;
+        }
+        if !valid_unit(&base) {
+            return Err(format!("Generated unit name invalid: {}", base));
+        }
+        seen.insert(base.clone());
+        let content = build_unit_content(
+            &format!("{} ({})", prefix, cmd),
+            &working_dir,
+            cmd,
+            &user,
+            group.as_deref(),
+        );
+        let dest = format!("/etc/systemd/system/{}.service", base);
+        planned.push((base, dest, content));
+    }
+
+    let tmp_dir = std::env::temp_dir();
+    let mut staged: Vec<(String, String, String)> = Vec::new(); // (unit_name, tmp, dest)
+    for (unit_name, dest, content) in &planned {
+        let tmp_path = tmp_dir.join(format!("lsp-{}.service", unit_name));
+        fs::write(&tmp_path, content).map_err(|e| e.to_string())?;
+        staged.push((unit_name.clone(), tmp_path.display().to_string(), dest.clone()));
+    }
+
+    for (_, tmp, dest) in &staged {
+        if let Err(e) = run_privileged(&[
+            "install".into(),
+            "-m".into(),
+            "644".into(),
+            tmp.clone(),
+            dest.clone(),
+        ]) {
+            // cleanup temp files on failure
+            for (_, t, _) in &staged {
+                let _ = fs::remove_file(t);
+            }
+            return Err(format!("install {} failed: {}", dest, e));
+        }
+    }
+    for (_, tmp, _) in &staged {
+        let _ = fs::remove_file(tmp);
+    }
+
+    run_privileged(&["systemctl".into(), "daemon-reload".into()])
+        .map_err(|e| format!("daemon-reload failed: {}", e))?;
+
+    for (i, (unit_name, _, _)) in planned.iter().enumerate() {
+        let display = format!("{} · {}", prefix, cmds[i]);
+        cfg.services.push(ServiceEntry {
+            name: display,
+            unit: unit_name.clone(),
+            group: group.clone().filter(|g| !g.is_empty()),
+            is_system: false,
+            working_dir: Some(working_dir.clone()),
+            command: Some(cmds[i].clone()),
+            run_user: Some(user.clone()),
+            is_custom: true,
+        });
+    }
     save(&cfg)?;
     Ok(cfg)
 }
@@ -503,6 +703,7 @@ pub fn run() {
             bulk_action,
             get_logs,
             scan_services,
+            create_command_services,
             set_sudo_password,
             clear_sudo_password,
             has_sudo_password,
