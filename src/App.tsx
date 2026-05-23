@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ChevronDown, Moon, Play, RefreshCw, RotateCcw, ScanSearch, Search, Settings, Square, Sun, X } from "lucide-react";
+import { ChevronDown, Moon, Play, RefreshCw, RotateCcw, ScanSearch, Search, Settings, Square, Sun, Trash2, X } from "lucide-react";
+import logo from "@/assets/logo.png";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -186,6 +187,30 @@ export default function App() {
     }
   }
 
+  async function bulkRemove() {
+    const removable = config.services.filter(
+      (s) => selected.has(s.unit) && !s.is_system,
+    );
+    if (removable.length === 0) {
+      toast.message("Nothing removable selected");
+      return;
+    }
+    const skipped = selected.size - removable.length;
+    let cfg: AppConfig | null = null;
+    for (const s of removable) {
+      try {
+        cfg = await api.removeService(s.unit);
+      } catch (e) {
+        toast.error(`Remove ${s.unit}: ${e}`);
+      }
+    }
+    if (cfg) setConfig(cfg);
+    setSelected(new Set());
+    toast.success(
+      `Removed ${removable.length}${skipped ? ` (${skipped} system service(s) skipped)` : ""}`,
+    );
+  }
+
   function openLogs(unit: string) {
     setLogsUnit(unit);
     setLogsOpen(true);
@@ -196,7 +221,7 @@ export default function App() {
       <header className="border-b sticky top-0 z-10 bg-background/95 backdrop-blur">
         <div className="mx-auto max-w-6xl px-4 h-12 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Activity className="size-4 text-muted-foreground" />
+            <img src={logo} alt="Linux Service Pilot" className="size-6 rounded" />
             <span className="font-medium">Linux Service Pilot</span>
             <span className="text-xs text-muted-foreground">/ systemd</span>
           </div>
@@ -293,6 +318,17 @@ export default function App() {
             >
               <RotateCcw />
               Restart
+            </Button>
+            <div className="w-px h-5 bg-border mx-1" />
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={selected.size === 0}
+              onClick={bulkRemove}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 />
+              Remove
             </Button>
           </div>
         </div>
