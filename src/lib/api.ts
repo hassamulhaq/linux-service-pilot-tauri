@@ -34,6 +34,10 @@ export const api = {
     invoke<AppConfig>("add_services_bulk", { entries }),
   removeService: (unit: string) => invoke<AppConfig>("remove_service", { unit }),
   scanServices: () => invoke<DiscoveredService[]>("scan_services"),
+  setSudoPassword: (password: string) =>
+    invoke<void>("set_sudo_password", { password }),
+  clearSudoPassword: () => invoke<void>("clear_sudo_password"),
+  hasSudoPassword: () => invoke<boolean>("has_sudo_password"),
   listStatus: () => invoke<ServiceStatus[]>("list_status"),
   serviceStatus: (unit: string) => invoke<ServiceStatus>("service_status", { unit }),
   serviceAction: (action: Action, unit: string) =>

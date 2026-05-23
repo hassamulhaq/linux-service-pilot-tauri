@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Moon, Play, RefreshCw, RotateCcw, ScanSearch, Square, Sun } from "lucide-react";
+import { Activity, Moon, Play, RefreshCw, RotateCcw, ScanSearch, Settings, Square, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ServiceTable } from "@/components/ServiceTable";
 import { LogsDialog } from "@/components/LogsDialog";
 import { AddServiceDialog } from "@/components/AddServiceDialog";
 import { ScanDialog } from "@/components/ScanDialog";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import { api, type Action, type AppConfig, type ServiceStatus } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -20,6 +21,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [dark, setDark] = useState(true);
   const [scanOpen, setScanOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -175,6 +177,9 @@ export default function App() {
               Scan
             </Button>
             <AddServiceDialog onAdded={setConfig} />
+            <Button size="icon-xs" variant="ghost" onClick={() => setSettingsOpen(true)} title="Settings">
+              <Settings />
+            </Button>
           </div>
         </div>
       </header>
@@ -247,6 +252,7 @@ export default function App() {
         existing={config.services.map((s) => s.unit)}
         onAdded={setConfig}
       />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

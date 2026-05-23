@@ -1,7 +1,107 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
+
+const KEYRING_SERVICE: &str = "linux-service-pilot";
+const KEYRING_USER: &str = "sudo";
+
+fn keyring_entry() -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())
+}
+
+fn stored_sudo_password() -> Option<String> {
+    keyring_entry().ok()?.get_password().ok()
+}
+
+#[tauri::command]
+fn set_sudo_password(password: String) -> Result<(), String> {
+    if password.is_empty() {
+        return Err("Password is empty".into());
+    }
+    let entry = keyring_entry()?;
+    entry.set_password(&password).map_err(|e| e.to_string())?;
+    // Verify it actually works.
+    sudo_verify(&password).map_err(|e| {
+        let _ = entry.delete_credential();
+        e
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_sudo_password() -> Result<(), String> {
+    let entry = keyring_entry()?;
+    match entry.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn has_sudo_password() -> bool {
+    stored_sudo_password().is_some()
+}
+
+fn sudo_verify(password: &str) -> Result<(), String> {
+    let mut child = Command::new("sudo")
+        .args(["-S", "-k", "-p", "", "--", "true"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(password.as_bytes());
+        let _ = stdin.write_all(b"\n");
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err("Invalid sudo password".into());
+    }
+    Ok(())
+}
+
+fn run_privileged(args: &[String]) -> Result<String, String> {
+    if let Some(pw) = stored_sudo_password() {
+        let mut cmd_args: Vec<String> = vec![
+            "-S".into(), "-k".into(), "-p".into(), "".into(), "--".into(),
+        ];
+        cmd_args.extend(args.iter().cloned());
+        let mut child = Command::new("sudo")
+            .args(&cmd_args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(pw.as_bytes());
+            let _ = stdin.write_all(b"\n");
+        }
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(if err.is_empty() {
+                format!("Command failed with status {}", out.status)
+            } else {
+                err
+            });
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        let out = Command::new("pkexec")
+            .args(args)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ServiceEntry {
@@ -161,14 +261,7 @@ fn run_systemctl(action: &str, unit: &str) -> Result<String, String> {
     if !matches!(action, "start" | "stop" | "restart" | "reload") {
         return Err(format!("Action not allowed: {}", action));
     }
-    let out = Command::new("pkexec")
-        .args(["systemctl", action, unit])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    run_privileged(&["systemctl".into(), action.into(), unit.into()])
 }
 
 #[tauri::command]
@@ -189,13 +282,7 @@ fn bulk_action(action: String, units: Vec<String>) -> Result<Vec<(String, Result
     }
     let mut args: Vec<String> = vec!["systemctl".into(), action.clone()];
     args.extend(units.iter().cloned());
-    let out = Command::new("pkexec")
-        .args(&args)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let result_msg = if out.status.success() { Ok(stdout) } else { Err(stderr.trim().to_string()) };
+    let result_msg = run_privileged(&args);
     Ok(units.into_iter().map(|u| (u, result_msg.clone())).collect())
 }
 
@@ -320,6 +407,9 @@ pub fn run() {
             bulk_action,
             get_logs,
             scan_services,
+            set_sudo_password,
+            clear_sudo_password,
+            has_sudo_password,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

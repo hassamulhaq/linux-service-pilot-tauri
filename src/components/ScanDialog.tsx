@@ -119,7 +119,7 @@ export function ScanDialog({ open, onOpenChange, existing, onAdded }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="!max-w-[80vw] w-[80vw] sm:max-w-[80vw]">
         <DialogHeader>
           <DialogTitle>Scan System Services</DialogTitle>
           <DialogDescription>
