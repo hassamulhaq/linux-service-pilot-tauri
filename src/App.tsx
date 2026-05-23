@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Moon, Play, RefreshCw, RotateCcw, Square, Sun } from "lucide-react";
+import { Activity, Moon, Play, RefreshCw, RotateCcw, ScanSearch, Square, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ServiceTable } from "@/components/ServiceTable";
 import { LogsDialog } from "@/components/LogsDialog";
 import { AddServiceDialog } from "@/components/AddServiceDialog";
+import { ScanDialog } from "@/components/ScanDialog";
 import { api, type Action, type AppConfig, type ServiceStatus } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -18,6 +19,7 @@ export default function App() {
   const [logsOpen, setLogsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dark, setDark] = useState(true);
+  const [scanOpen, setScanOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -38,7 +40,9 @@ export default function App() {
   const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
-      setConfig(await api.loadConfig());
+      const cfg = await api.loadConfig();
+      setConfig(cfg);
+      if (cfg.services.length === 0) setScanOpen(true);
     } catch (e) {
       toast.error(`Failed to load config: ${e}`);
     } finally {
@@ -166,6 +170,10 @@ export default function App() {
             <Button size="icon-xs" variant="ghost" onClick={refreshStatuses} title="Refresh">
               <RefreshCw />
             </Button>
+            <Button size="xs" variant="outline" onClick={() => setScanOpen(true)}>
+              <ScanSearch />
+              Scan
+            </Button>
             <AddServiceDialog onAdded={setConfig} />
           </div>
         </div>
@@ -233,6 +241,12 @@ export default function App() {
       </main>
 
       <LogsDialog unit={logsUnit} open={logsOpen} onOpenChange={setLogsOpen} />
+      <ScanDialog
+        open={scanOpen}
+        onOpenChange={setScanOpen}
+        existing={config.services.map((s) => s.unit)}
+        onAdded={setConfig}
+      />
     </div>
   );
 }

@@ -24,6 +24,14 @@ pub struct ServiceStatus {
     pub load: String,
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct DiscoveredService {
+    pub unit: String,
+    pub description: String,
+    pub state: String,
+    pub active: String,
+}
+
 fn config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -35,18 +43,7 @@ fn config_path() -> PathBuf {
 }
 
 fn default_config() -> AppConfig {
-    AppConfig {
-        services: vec![
-            ServiceEntry { name: "Nginx".into(), unit: "nginx".into(), group: Some("Web".into()) },
-            ServiceEntry { name: "Apache".into(), unit: "apache2".into(), group: Some("Web".into()) },
-            ServiceEntry { name: "MySQL".into(), unit: "mysql".into(), group: Some("Database".into()) },
-            ServiceEntry { name: "PostgreSQL".into(), unit: "postgresql".into(), group: Some("Database".into()) },
-            ServiceEntry { name: "Redis".into(), unit: "redis-server".into(), group: Some("Cache".into()) },
-            ServiceEntry { name: "MongoDB".into(), unit: "mongod".into(), group: Some("Database".into()) },
-            ServiceEntry { name: "PHP 8.3 FPM".into(), unit: "php8.3-fpm".into(), group: Some("Runtime".into()) },
-            ServiceEntry { name: "Docker".into(), unit: "docker".into(), group: Some("Container".into()) },
-        ],
-    }
+    AppConfig { services: vec![] }
 }
 
 fn load_or_init() -> AppConfig {
@@ -203,6 +200,94 @@ fn bulk_action(action: String, units: Vec<String>) -> Result<Vec<(String, Result
 }
 
 #[tauri::command]
+fn scan_services() -> Result<Vec<DiscoveredService>, String> {
+    let files = Command::new("systemctl")
+        .args([
+            "list-unit-files",
+            "--type=service",
+            "--no-legend",
+            "--no-pager",
+            "--plain",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !files.status.success() {
+        return Err(String::from_utf8_lossy(&files.stderr).trim().to_string());
+    }
+    let files_text = String::from_utf8_lossy(&files.stdout);
+
+    let units = Command::new("systemctl")
+        .args([
+            "list-units",
+            "--type=service",
+            "--all",
+            "--no-legend",
+            "--no-pager",
+            "--plain",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let units_text = String::from_utf8_lossy(&units.stdout);
+
+    let mut active_map: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
+    for line in units_text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 5 {
+            let unit = parts[0].trim_end_matches(".service").to_string();
+            let active = parts[2].to_string();
+            let desc = parts[4..].join(" ");
+            active_map.insert(unit, (active, desc));
+        }
+    }
+
+    let mut out = Vec::new();
+    for line in files_text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let full = parts[0];
+        if !full.ends_with(".service") {
+            continue;
+        }
+        let unit = full.trim_end_matches(".service").to_string();
+        if unit.ends_with('@') {
+            continue;
+        }
+        let state = parts[1].to_string();
+        let (active, description) = active_map
+            .get(&unit)
+            .cloned()
+            .unwrap_or_else(|| ("inactive".to_string(), String::new()));
+        out.push(DiscoveredService {
+            unit,
+            description,
+            state,
+            active,
+        });
+    }
+    out.sort_by(|a, b| a.unit.cmp(&b.unit));
+    Ok(out)
+}
+
+#[tauri::command]
+fn add_services_bulk(entries: Vec<ServiceEntry>) -> Result<AppConfig, String> {
+    let mut cfg = load_or_init();
+    for entry in entries {
+        if !valid_unit(&entry.unit) {
+            continue;
+        }
+        if cfg.services.iter().any(|s| s.unit == entry.unit) {
+            continue;
+        }
+        cfg.services.push(entry);
+    }
+    save(&cfg)?;
+    Ok(cfg)
+}
+
+#[tauri::command]
 fn get_logs(unit: String, lines: Option<u32>) -> Result<String, String> {
     let cfg = load_or_init();
     if !is_whitelisted(&unit, &cfg) || !valid_unit(&unit) {
@@ -227,12 +312,14 @@ pub fn run() {
             load_config,
             save_config,
             add_service,
+            add_services_bulk,
             remove_service,
             service_status,
             list_status,
             service_action,
             bulk_action,
             get_logs,
+            scan_services,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

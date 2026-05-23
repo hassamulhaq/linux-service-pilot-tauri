@@ -19,11 +19,21 @@ export type ServiceStatus = {
 
 export type Action = "start" | "stop" | "restart" | "reload";
 
+export type DiscoveredService = {
+  unit: string;
+  description: string;
+  state: string;
+  active: string;
+};
+
 export const api = {
   loadConfig: () => invoke<AppConfig>("load_config"),
   saveConfig: (config: AppConfig) => invoke<void>("save_config", { config }),
   addService: (entry: ServiceEntry) => invoke<AppConfig>("add_service", { entry }),
+  addServicesBulk: (entries: ServiceEntry[]) =>
+    invoke<AppConfig>("add_services_bulk", { entries }),
   removeService: (unit: string) => invoke<AppConfig>("remove_service", { unit }),
+  scanServices: () => invoke<DiscoveredService[]>("scan_services"),
   listStatus: () => invoke<ServiceStatus[]>("list_status"),
   serviceStatus: (unit: string) => invoke<ServiceStatus>("service_status", { unit }),
   serviceAction: (action: Action, unit: string) =>
