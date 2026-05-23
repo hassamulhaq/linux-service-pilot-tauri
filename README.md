@@ -4,6 +4,12 @@ A fast, native desktop dashboard for managing systemd services on Ubuntu/Linux. 
 
 ![Main screen](docs/screenshots/main_screen.webp)
 
+## Demo
+
+<video src="https://raw.githubusercontent.com/hassamulhaq/linux-service-pilot-tauri/main/docs/app-demo.mp4" controls muted playsinline width="720">
+  Your browser does not support the video tag. <a href="docs/app-demo.mp4">Download the demo</a>.
+</video>
+
 ## Quick Start
 
 ### 1. Install prerequisites (Ubuntu / Debian)
@@ -97,6 +103,7 @@ pnpm tauri build --bundles appimage  # only AppImage
 | ![Dashboard](docs/screenshots/sc_00.webp) | ![Scan dialog](docs/screenshots/sc_01.webp) |
 | ![Logs viewer](docs/screenshots/sc_02.webp) | ![Settings — sudo keyring](docs/screenshots/sc_03.webp) |
 | ![Add service](docs/screenshots/sc_04.webp) | ![Settings — sudo block](docs/screenshots/sc_05.webp) |
+| ![Create from commands](docs/screenshots/sc_06.webp) | |
 
 ## Stack
 
