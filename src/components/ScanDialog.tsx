@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, Loader2 } from "lucide-react";
+import { RefreshCw, Search, Loader2, ShieldAlert } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +51,7 @@ export function ScanDialog({ open, onOpenChange, existing, onAdded }: Props) {
   const [filter, setFilter] = useState("");
   const [saving, setSaving] = useState(false);
   const [hideInstalled, setHideInstalled] = useState(true);
+  const [includeSystem, setIncludeSystem] = useState(false);
 
   async function scan() {
     setScanning(true);
@@ -75,10 +76,11 @@ export function ScanDialog({ open, onOpenChange, existing, onAdded }: Props) {
     return discovered.filter((d) => {
       if (hideInstalled && existing.includes(d.unit)) return false;
       if (d.state === "masked" || d.state === "alias") return false;
+      if (!includeSystem && d.is_system) return false;
       if (!q) return true;
       return d.unit.toLowerCase().includes(q) || d.description.toLowerCase().includes(q);
     });
-  }, [discovered, filter, existing, hideInstalled]);
+  }, [discovered, filter, existing, hideInstalled, includeSystem]);
 
   function toggle(unit: string) {
     setPicked((p) => {
@@ -103,7 +105,8 @@ export function ScanDialog({ open, onOpenChange, existing, onAdded }: Props) {
         .map((d) => ({
           name: prettyName(d.unit),
           unit: d.unit,
-          group: guessGroup(d.unit),
+          group: d.is_system ? "System" : guessGroup(d.unit),
+          is_system: d.is_system,
         }));
       const cfg = await api.addServicesBulk(entries);
       onAdded(cfg);
@@ -143,13 +146,31 @@ export function ScanDialog({ open, onOpenChange, existing, onAdded }: Props) {
               onCheckedChange={(v) => setHideInstalled(!!v)}
               className="size-3.5"
             />
-            Hide already added
+            Hide added
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none">
+            <Checkbox
+              checked={includeSystem}
+              onCheckedChange={(v) => setIncludeSystem(!!v)}
+              className="size-3.5"
+            />
+            Include system services
           </label>
           <Button size="sm" variant="outline" onClick={scan} disabled={scanning}>
             {scanning ? <Loader2 className="animate-spin" /> : <RefreshCw />}
             Rescan
           </Button>
         </div>
+
+        {includeSystem && (
+          <div className="flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+            <ShieldAlert className="size-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="text-amber-700 dark:text-amber-200">
+              <span className="font-medium">System services included.</span>{" "}
+              Modifying these can break your OS. Once added, they cannot be removed from this list.
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
           <span>
@@ -197,7 +218,14 @@ export function ScanDialog({ open, onOpenChange, existing, onAdded }: Props) {
                       disabled={isInstalled}
                       className="size-3.5"
                     />
-                    <span className="truncate font-mono">{d.unit}</span>
+                    <span className="truncate font-mono flex items-center gap-1.5">
+                      {d.unit}
+                      {d.is_system && (
+                        <span className="text-[9px] uppercase tracking-wider text-amber-500 border border-amber-500/40 rounded px-1 py-px">
+                          sys
+                        </span>
+                      )}
+                    </span>
                     <span className="truncate text-muted-foreground">
                       {d.description || "—"}
                     </span>

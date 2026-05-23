@@ -49,8 +49,8 @@ export function ServiceTable({
   }
 
   return (
-    <div className="divide-y">
-      <div className="grid grid-cols-[28px_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_140px] items-center gap-3 px-3 h-8 text-[10px] uppercase tracking-wider text-muted-foreground">
+    <div className="flex flex-col max-h-[calc(100vh-260px)]">
+      <div className="grid grid-cols-[28px_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_140px] items-center gap-3 px-3 h-8 text-[10px] uppercase tracking-wider text-muted-foreground border-b bg-card sticky top-0">
         <Checkbox
           checked={allSelected ? true : someSelected ? "indeterminate" : false}
           onCheckedChange={onToggleAll}
@@ -63,6 +63,7 @@ export function ServiceTable({
         <span>Status</span>
         <span className="text-right pr-1">Actions</span>
       </div>
+      <div className="overflow-y-auto divide-y">
       {rows.map(({ entry, status }) => {
         const isSelected = selected.has(entry.unit);
         const isBusy = busy.has(entry.unit);
@@ -88,7 +89,14 @@ export function ServiceTable({
               aria-label={`Select ${entry.name}`}
               className="size-3.5"
             />
-            <span className="truncate font-medium">{entry.name}</span>
+            <span className="truncate font-medium flex items-center gap-1.5">
+              {entry.name}
+              {entry.is_system && (
+                <span className="text-[9px] uppercase tracking-wider text-amber-500 border border-amber-500/40 rounded px-1 py-px shrink-0">
+                  sys
+                </span>
+              )}
+            </span>
             <span className="truncate font-mono text-xs text-muted-foreground">
               {entry.unit}
             </span>
@@ -140,20 +148,25 @@ export function ServiceTable({
                     <ScrollText />
                     Logs
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={() => onRemove(entry.unit)}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 />
-                    Remove
-                  </DropdownMenuItem>
+                  {!entry.is_system && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() => onRemove(entry.unit)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 />
+                        Remove
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

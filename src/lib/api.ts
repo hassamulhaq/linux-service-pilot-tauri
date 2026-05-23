@@ -4,6 +4,7 @@ export type ServiceEntry = {
   name: string;
   unit: string;
   group?: string | null;
+  is_system?: boolean;
 };
 
 export type AppConfig = {
@@ -24,6 +25,7 @@ export type DiscoveredService = {
   description: string;
   state: string;
   active: string;
+  is_system: boolean;
 };
 
 export const api = {

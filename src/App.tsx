@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Moon, Play, RefreshCw, RotateCcw, ScanSearch, Settings, Square, Sun } from "lucide-react";
+import { Activity, ChevronDown, Moon, Play, RefreshCw, RotateCcw, ScanSearch, Search, Settings, Square, Sun, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ServiceTable } from "@/components/ServiceTable";
 import { LogsDialog } from "@/components/LogsDialog";
 import { AddServiceDialog } from "@/components/AddServiceDialog";
@@ -22,6 +28,8 @@ export default function App() {
   const [dark, setDark] = useState(true);
   const [scanOpen, setScanOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [groupFilter, setGroupFilter] = useState<string>("all");
   const pollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -65,10 +73,29 @@ export default function App() {
     };
   }, [config.services.length, refreshStatuses]);
 
-  const rows = useMemo(
+  const allRows = useMemo(
     () => config.services.map((entry) => ({ entry, status: statuses[entry.unit] })),
     [config.services, statuses],
   );
+
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of config.services) if (s.group) set.add(s.group);
+    return Array.from(set).sort();
+  }, [config.services]);
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return allRows.filter(({ entry }) => {
+      if (groupFilter !== "all" && (entry.group ?? "") !== groupFilter) return false;
+      if (!q) return true;
+      return (
+        entry.name.toLowerCase().includes(q) ||
+        entry.unit.toLowerCase().includes(q) ||
+        (entry.group ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [allRows, query, groupFilter]);
 
   const counts = useMemo(() => {
     let running = 0, stopped = 0, failed = 0;
@@ -90,11 +117,19 @@ export default function App() {
   }
 
   function toggleAll() {
-    setSelected((prev) =>
-      prev.size === config.services.length
-        ? new Set()
-        : new Set(config.services.map((s) => s.unit)),
-    );
+    setSelected((prev) => {
+      const visibleUnits = rows.map((r) => r.entry.unit);
+      const allVisibleSelected =
+        visibleUnits.length > 0 && visibleUnits.every((u) => prev.has(u));
+      if (allVisibleSelected) {
+        const next = new Set(prev);
+        visibleUnits.forEach((u) => next.delete(u));
+        return next;
+      }
+      const next = new Set(prev);
+      visibleUnits.forEach((u) => next.add(u));
+      return next;
+    });
   }
 
   async function doAction(action: Action, unit: string) {
@@ -192,10 +227,45 @@ export default function App() {
           <StatCard label="Failed" value={counts.failed} dot="red" />
         </div>
 
-        <div className="flex items-center justify-between mb-3 px-1">
-          <div className="text-xs text-muted-foreground">
-            {selected.size > 0 ? `${selected.size} selected` : `${counts.total} services`}
+        <div className="flex items-center gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name, unit, or group…"
+              className="w-full h-8 pl-8 pr-8 rounded border border-input bg-background text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                aria-label="Clear"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
           </div>
+          {groups.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="xs" variant="outline" className="min-w-32 justify-between">
+                  <span>{groupFilter === "all" ? "All groups" : groupFilter}</span>
+                  <ChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="text-xs min-w-32">
+                <DropdownMenuItem onSelect={() => setGroupFilter("all")}>
+                  All groups
+                </DropdownMenuItem>
+                {groups.map((g) => (
+                  <DropdownMenuItem key={g} onSelect={() => setGroupFilter(g)}>
+                    {g}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <div className="flex items-center gap-1">
             <Button
               size="xs"
@@ -225,6 +295,13 @@ export default function App() {
               Restart
             </Button>
           </div>
+        </div>
+        <div className="text-[11px] text-muted-foreground mb-2 px-1">
+          {selected.size > 0
+            ? `${selected.size} selected`
+            : query || groupFilter !== "all"
+            ? `${rows.length} of ${allRows.length} services`
+            : `${counts.total} services`}
         </div>
 
         <div className="rounded border bg-card">

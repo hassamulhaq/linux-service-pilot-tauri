@@ -109,6 +109,8 @@ pub struct ServiceEntry {
     pub unit: String,
     #[serde(default)]
     pub group: Option<String>,
+    #[serde(default)]
+    pub is_system: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -130,6 +132,37 @@ pub struct DiscoveredService {
     pub description: String,
     pub state: String,
     pub active: String,
+    pub is_system: bool,
+}
+
+fn is_system_service(unit: &str) -> bool {
+    const PATTERNS: &[&str] = &[
+        "systemd-", "dbus", "polkit", "NetworkManager", "networkd-dispatcher",
+        "snap", "accounts-daemon", "avahi-daemon", "bluetooth", "bluez",
+        "ModemManager", "udisks", "upower", "packagekit", "gdm", "lightdm",
+        "sddm", "kdm", "cups", "rsyslog", "syslog", "thermald", "irqbalance",
+        "apparmor", "ufw", "chrony", "chronyd", "ntp", "fwupd", "whoopsie",
+        "kerneloops", "apport", "plymouth", "smartmontools", "multipath",
+        "secureboot-db", "getty@", "autovt@", "serial-getty@", "user@",
+        "user-runtime-dir@", "console-getty", "motd-news", "fstrim",
+        "logrotate", "man-db", "apt-daily", "unattended-upgrades",
+        "update-notifier", "dpkg-", "grub-", "swapfile", "swap-",
+        "wpa_supplicant", "power-profiles-daemon", "gnome-initial-setup",
+        "gnome-remote-desktop", "rtkit-daemon", "switcheroo-control",
+        "colord", "iio-sensor-proxy", "boot-efi", "anacron", "cron.service",
+        "kmod-", "blk-availability", "console-setup", "keyboard-setup",
+        "finalrd", "lvm2-", "mdmonitor", "modprobe@", "rpcbind",
+        "binfmt-support",
+    ];
+    PATTERNS.iter().any(|p| {
+        if p.ends_with('@') {
+            unit.starts_with(p)
+        } else if p.ends_with('-') {
+            unit.starts_with(p)
+        } else {
+            unit == *p || unit.starts_with(&format!("{}.", p)) || unit.starts_with(&format!("{}-", p))
+        }
+    }) || unit.starts_with("systemd-")
 }
 
 fn config_dir() -> PathBuf {
@@ -208,6 +241,11 @@ fn add_service(entry: ServiceEntry) -> Result<AppConfig, String> {
 #[tauri::command]
 fn remove_service(unit: String) -> Result<AppConfig, String> {
     let mut cfg = load_or_init();
+    if let Some(entry) = cfg.services.iter().find(|s| s.unit == unit) {
+        if entry.is_system {
+            return Err("System services cannot be removed".into());
+        }
+    }
     cfg.services.retain(|s| s.unit != unit);
     save(&cfg)?;
     Ok(cfg)
@@ -347,11 +385,13 @@ fn scan_services() -> Result<Vec<DiscoveredService>, String> {
             .get(&unit)
             .cloned()
             .unwrap_or_else(|| ("inactive".to_string(), String::new()));
+        let is_system = is_system_service(&unit);
         out.push(DiscoveredService {
             unit,
             description,
             state,
             active,
+            is_system,
         });
     }
     out.sort_by(|a, b| a.unit.cmp(&b.unit));
