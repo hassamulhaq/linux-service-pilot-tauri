@@ -16,9 +16,18 @@ export type ServiceStatus = {
   active: string;
   sub: string;
   load: string;
+  unit_file_state: string;
 };
 
-export type Action = "start" | "stop" | "restart" | "reload";
+export type Action =
+  | "start"
+  | "stop"
+  | "restart"
+  | "reload"
+  | "enable"
+  | "disable"
+  | "mask"
+  | "unmask";
 
 export type DiscoveredService = {
   unit: string;
@@ -59,8 +68,11 @@ export function statusBadgeVariant(s: ServiceStatus): "default" | "destructive" 
 
 export function statusLabel(s: ServiceStatus): string {
   if (s.load === "not-found") return "Not Installed";
+  if (s.load === "masked" || s.unit_file_state === "masked") return "Masked";
   if (s.active === "active") return s.sub === "running" ? "Running" : `Active (${s.sub})`;
-  if (s.active === "inactive") return "Stopped";
+  if (s.active === "inactive") {
+    return s.unit_file_state === "disabled" ? "Stopped · Disabled" : "Stopped";
+  }
   if (s.active === "failed") return "Failed";
   if (s.active === "activating") return "Starting…";
   if (s.active === "deactivating") return "Stopping…";

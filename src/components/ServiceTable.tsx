@@ -1,4 +1,4 @@
-import { MoreHorizontal, Play, Square, RotateCcw, ScrollText, Trash2 } from "lucide-react";
+import { MoreHorizontal, Play, Square, RotateCcw, ScrollText, Trash2, PowerOff, Power, Lock, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -69,6 +69,8 @@ export function ServiceTable({
         const isBusy = busy.has(entry.unit);
         const isActive = status?.active === "active";
         const isFailed = status?.active === "failed";
+        const isMasked =
+          status?.load === "masked" || status?.unit_file_state === "masked";
         const dotColor = isActive
           ? "bg-emerald-500"
           : isFailed
@@ -113,8 +115,8 @@ export function ServiceTable({
               <Button
                 size="icon-xs"
                 variant="ghost"
-                title="Start"
-                disabled={isBusy || isActive}
+                title={isMasked ? "Masked — unmask first" : "Start"}
+                disabled={isBusy || isActive || isMasked}
                 onClick={() => onAction("start", entry.unit)}
               >
                 <Play />
@@ -150,6 +152,42 @@ export function ServiceTable({
                   </DropdownMenuItem>
                   {!entry.is_system && (
                     <>
+                      <DropdownMenuSeparator />
+                      {status?.unit_file_state === "enabled" ? (
+                        <DropdownMenuItem
+                          disabled={isBusy}
+                          onSelect={() => onAction("disable", entry.unit)}
+                        >
+                          <PowerOff />
+                          Disable on boot
+                        </DropdownMenuItem>
+                      ) : status?.unit_file_state === "disabled" ? (
+                        <DropdownMenuItem
+                          disabled={isBusy}
+                          onSelect={() => onAction("enable", entry.unit)}
+                        >
+                          <Power />
+                          Enable on boot
+                        </DropdownMenuItem>
+                      ) : null}
+                      {status?.unit_file_state === "masked" ? (
+                        <DropdownMenuItem
+                          disabled={isBusy}
+                          onSelect={() => onAction("unmask", entry.unit)}
+                        >
+                          <Unlock />
+                          Unmask
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          disabled={isBusy}
+                          onSelect={() => onAction("mask", entry.unit)}
+                          className="text-amber-600 focus:text-amber-600"
+                        >
+                          <Lock />
+                          Mask (block start)
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onSelect={() => onRemove(entry.unit)}

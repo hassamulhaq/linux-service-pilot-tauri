@@ -124,6 +124,7 @@ pub struct ServiceStatus {
     pub active: String,
     pub sub: String,
     pub load: String,
+    pub unit_file_state: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -258,19 +259,26 @@ fn service_status(unit: String) -> Result<ServiceStatus, String> {
         return Err("Unit not allowed".into());
     }
     let out = Command::new("systemctl")
-        .args(["show", &unit, "--property=ActiveState,SubState,LoadState", "--no-pager"])
+        .args([
+            "show",
+            &unit,
+            "--property=ActiveState,SubState,LoadState,UnitFileState",
+            "--no-pager",
+        ])
         .output()
         .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&out.stdout);
     let mut active = String::from("unknown");
     let mut sub = String::from("unknown");
     let mut load = String::from("unknown");
+    let mut unit_file_state = String::new();
     for line in text.lines() {
         if let Some(v) = line.strip_prefix("ActiveState=") { active = v.to_string(); }
         else if let Some(v) = line.strip_prefix("SubState=") { sub = v.to_string(); }
         else if let Some(v) = line.strip_prefix("LoadState=") { load = v.to_string(); }
+        else if let Some(v) = line.strip_prefix("UnitFileState=") { unit_file_state = v.to_string(); }
     }
-    Ok(ServiceStatus { unit, active, sub, load })
+    Ok(ServiceStatus { unit, active, sub, load, unit_file_state })
 }
 
 #[tauri::command]
@@ -285,6 +293,7 @@ fn list_status() -> Result<Vec<ServiceStatus>, String> {
                 active: "unknown".into(),
                 sub: "unknown".into(),
                 load: "not-found".into(),
+                unit_file_state: String::new(),
             }),
         }
     }
@@ -296,7 +305,10 @@ fn run_systemctl(action: &str, unit: &str) -> Result<String, String> {
     if !is_whitelisted(unit, &cfg) || !valid_unit(unit) {
         return Err(format!("Unit not allowed: {}", unit));
     }
-    if !matches!(action, "start" | "stop" | "restart" | "reload") {
+    if !matches!(
+        action,
+        "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "mask" | "unmask"
+    ) {
         return Err(format!("Action not allowed: {}", action));
     }
     run_privileged(&["systemctl".into(), action.into(), unit.into()])
@@ -310,7 +322,10 @@ fn service_action(action: String, unit: String) -> Result<String, String> {
 #[tauri::command]
 fn bulk_action(action: String, units: Vec<String>) -> Result<Vec<(String, Result<String, String>)>, String> {
     let cfg = load_or_init();
-    if !matches!(action.as_str(), "start" | "stop" | "restart" | "reload") {
+    if !matches!(
+        action.as_str(),
+        "start" | "stop" | "restart" | "reload" | "enable" | "disable" | "mask" | "unmask"
+    ) {
         return Err(format!("Action not allowed: {}", action));
     }
     for u in &units {
