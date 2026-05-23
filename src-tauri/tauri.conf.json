@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "linux-service-pilot-tauri",
-        "width": 800,
-        "height": 600
+        "title": "Linux Service Pilot",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {

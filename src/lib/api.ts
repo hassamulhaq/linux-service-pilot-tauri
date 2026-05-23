@@ -1,0 +1,52 @@
+import { invoke } from "@tauri-apps/api/core";
+
+export type ServiceEntry = {
+  name: string;
+  unit: string;
+  group?: string | null;
+};
+
+export type AppConfig = {
+  services: ServiceEntry[];
+};
+
+export type ServiceStatus = {
+  unit: string;
+  active: string;
+  sub: string;
+  load: string;
+};
+
+export type Action = "start" | "stop" | "restart" | "reload";
+
+export const api = {
+  loadConfig: () => invoke<AppConfig>("load_config"),
+  saveConfig: (config: AppConfig) => invoke<void>("save_config", { config }),
+  addService: (entry: ServiceEntry) => invoke<AppConfig>("add_service", { entry }),
+  removeService: (unit: string) => invoke<AppConfig>("remove_service", { unit }),
+  listStatus: () => invoke<ServiceStatus[]>("list_status"),
+  serviceStatus: (unit: string) => invoke<ServiceStatus>("service_status", { unit }),
+  serviceAction: (action: Action, unit: string) =>
+    invoke<string>("service_action", { action, unit }),
+  bulkAction: (action: Action, units: string[]) =>
+    invoke<[string, { Ok?: string; Err?: string }][]>("bulk_action", { action, units }),
+  getLogs: (unit: string, lines = 200) =>
+    invoke<string>("get_logs", { unit, lines }),
+};
+
+export function statusBadgeVariant(s: ServiceStatus): "default" | "destructive" | "secondary" | "outline" {
+  if (s.load === "not-found") return "outline";
+  if (s.active === "active") return "default";
+  if (s.active === "failed") return "destructive";
+  return "secondary";
+}
+
+export function statusLabel(s: ServiceStatus): string {
+  if (s.load === "not-found") return "Not Installed";
+  if (s.active === "active") return s.sub === "running" ? "Running" : `Active (${s.sub})`;
+  if (s.active === "inactive") return "Stopped";
+  if (s.active === "failed") return "Failed";
+  if (s.active === "activating") return "Starting…";
+  if (s.active === "deactivating") return "Stopping…";
+  return s.active;
+}
